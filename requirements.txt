@@ -1,0 +1,9 @@
+pandas>=2.2
+SQLAlchemy>=2.0
+PyMySQL>=1.1
+cryptography>=42.0
+requests>=2.31
+prefect>=3.0
+streamlit>=1.35
+plotly>=5.20
+python-dotenv>=1.0
