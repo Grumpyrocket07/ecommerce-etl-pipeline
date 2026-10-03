@@ -30,7 +30,11 @@ SQLALCHEMY_URL = (
 
 # --- Data sources ---------------------------------------------------------
 CSV_DATA_DIR = Path(os.getenv("CSV_DATA_DIR", BASE_DIR / "data"))
-FAKESTORE_API_BASE = os.getenv("FAKESTORE_API_BASE", "https://fakestoreapi.com")
+# Switched default to DummyJSON after FakeStoreAPI had a backend outage
+# (Cloudflare 522) during development. extract.py's parsing is tolerant of
+# either API's response shape, so pointing this back at
+# https://fakestoreapi.com later needs no code change.
+FAKESTORE_API_BASE = os.getenv("FAKESTORE_API_BASE", "https://dummyjson.com")
 
 # --- Pipeline behaviour ---------------------------------------------------
 CSV_CHUNK_SIZE = int(os.getenv("CSV_CHUNK_SIZE", "5000"))

@@ -86,7 +86,7 @@ GROUP BY r.review_score
 ORDER BY r.review_score;
 
 -- 7. Live product catalog snapshot (most recent fetch), by category
--- Pulls from the separate live_products source (FakeStoreAPI), not Olist.
+-- Pulls from the separate live_products source (DummyJSON), not Olist.
 SELECT
     category,
     COUNT(*)              AS product_count,

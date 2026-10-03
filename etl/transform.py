@@ -142,19 +142,36 @@ def transform_olist(raw: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 
 
 def transform_fakestore(raw_products: list[dict]) -> pd.DataFrame:
+    """
+    Handles two different product shapes depending on which API answered
+    (see extract.py's docstring):
+      - FakeStoreAPI: "rating": {"rate": 3.9, "count": 120}, "image": "<url>"
+      - DummyJSON:    "rating": 4.94 (flat number), "thumbnail": "<url>",
+                       with a "reviews" list instead of a rating count
+    """
     fetched_at = datetime.now(timezone.utc)
     rows = []
     for p in raw_products:
-        rating = p.get("rating") or {}
+        rating = p.get("rating")
+        if isinstance(rating, dict):  # FakeStoreAPI shape
+            rating_rate = rating.get("rate")
+            rating_count = rating.get("count")
+        else:  # DummyJSON shape — flat number, no rating count field
+            rating_rate = rating
+            reviews = p.get("reviews")
+            rating_count = len(reviews) if isinstance(reviews, list) else None
+
+        image_url = p.get("image") or p.get("thumbnail")
+
         rows.append({
             "source_product_id": p.get("id"),
             "title": p.get("title"),
             "price": p.get("price"),
             "category": p.get("category"),
             "description": p.get("description"),
-            "image_url": p.get("image"),
-            "rating_rate": rating.get("rate"),
-            "rating_count": rating.get("count"),
+            "image_url": image_url,
+            "rating_rate": rating_rate,
+            "rating_count": rating_count,
             "fetched_at": fetched_at,
         })
     df = pd.DataFrame(rows)

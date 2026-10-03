@@ -65,10 +65,19 @@ def extract_olist_csvs(data_dir: Path = CSV_DATA_DIR) -> dict[str, pd.DataFrame]
 
 def extract_fakestore_products() -> list[dict]:
     """
-    Pulls the full product catalog from FakeStoreAPI, retrying transient
-    failures with exponential backoff before giving up.
+    Pulls the full product catalog from the configured demo e-commerce API.
+
+    Tolerant of two response shapes, since this was switched from
+    FakeStoreAPI to DummyJSON mid-project when FakeStoreAPI had an outage
+    (Cloudflare 522 — their backend, not a code problem) and they don't
+    return JSON identically:
+      - a bare list of product objects (FakeStoreAPI's shape), or
+      - {"products": [...], "total": ..., ...} (DummyJSON's shape)
+    Returns a plain list of product dicts either way, so transform_fakestore
+    doesn't need to know which API actually answered.
     """
-    url = f"{FAKESTORE_API_BASE}/products"
+    # DummyJSON paginates at 30 items by default; limit=0 asks for all of them.
+    url = f"{FAKESTORE_API_BASE}/products?limit=0"
     last_exc = None
 
     for attempt in range(1, API_MAX_RETRIES + 1):
@@ -76,16 +85,17 @@ def extract_fakestore_products() -> list[dict]:
             response = requests.get(url, timeout=API_TIMEOUT_SECONDS)
             response.raise_for_status()
             data = response.json()
-            logger.info("Fetched %d products from FakeStoreAPI (attempt %d)", len(data), attempt)
-            return data
-        except (requests.RequestException, ValueError) as exc:
+            products = data["products"] if isinstance(data, dict) and "products" in data else data
+            logger.info("Fetched %d products from %s (attempt %d)", len(products), FAKESTORE_API_BASE, attempt)
+            return products
+        except (requests.RequestException, ValueError, KeyError) as exc:
             last_exc = exc
             wait = API_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
             logger.warning(
-                "FakeStoreAPI request failed (attempt %d/%d): %s — retrying in %.1fs",
+                "Product API request failed (attempt %d/%d): %s — retrying in %.1fs",
                 attempt, API_MAX_RETRIES, exc, wait,
             )
             if attempt < API_MAX_RETRIES:
                 time.sleep(wait)
 
-    raise RuntimeError(f"FakeStoreAPI extraction failed after {API_MAX_RETRIES} attempts") from last_exc
+    raise RuntimeError(f"Product API extraction failed after {API_MAX_RETRIES} attempts") from last_exc

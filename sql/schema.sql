@@ -3,7 +3,8 @@
 -- ============================================================================
 -- Source data:
 --   1) Olist Brazilian E-Commerce dataset (historical, batch-loaded from CSV)
---   2) FakeStoreAPI (live product catalog, pulled on a schedule)
+--   2) DummyJSON (live product catalog, pulled on a schedule — originally
+--      FakeStoreAPI, swapped after a backend outage; see etl/extract.py)
 -- Design notes:
 --   - Historical (Olist) tables are normalized around orders as the fact table,
 --     with customers/sellers/products/payments/reviews as related dimensions.
@@ -146,7 +147,8 @@ CREATE TABLE IF NOT EXISTS order_reviews (
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------------
--- Live source: products pulled from FakeStoreAPI on a schedule
+-- Live source: products pulled from a live demo API (DummyJSON by
+-- default) on a schedule
 -- Kept separate from `products` — different catalog, different ID space.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS live_products (

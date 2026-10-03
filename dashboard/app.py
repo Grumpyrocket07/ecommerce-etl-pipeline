@@ -43,7 +43,7 @@ def run_query(sql: str) -> pd.DataFrame:
 st.title("E-Commerce ETL Pipeline & Analytics")
 st.caption(
     "Historical data: Olist Brazilian E-Commerce dataset (batch). "
-    "Live catalog: FakeStoreAPI (scheduled pulls). "
+    "Live catalog: DummyJSON (scheduled pulls). "
     "This view reflects the last scheduled pipeline run — not a live query trigger."
 )
 
@@ -156,7 +156,7 @@ if not review_delay.empty:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Live catalog (FakeStoreAPI)
+# Live catalog (DummyJSON)
 # ---------------------------------------------------------------------------
 st.subheader("Live product catalog (most recent fetch)")
 live = run_query("""
@@ -167,7 +167,7 @@ live = run_query("""
     GROUP BY category ORDER BY avg_price DESC
 """)
 if live.empty:
-    st.info("No live_products data yet — the FakeStoreAPI pull hasn't run successfully.")
+    st.info("No live_products data yet — the live product API pull hasn't run successfully.")
 else:
     fig = px.bar(live, x="category", y="avg_price", hover_data=["product_count", "avg_rating"])
     st.plotly_chart(fig, use_container_width=True)
