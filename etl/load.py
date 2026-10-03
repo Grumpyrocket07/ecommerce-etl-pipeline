@@ -7,7 +7,7 @@ Load strategy, and why:
     keeps the load idempotent (rerunning the pipeline never produces
     duplicate-key errors or double-counted rows) without disabling foreign
     key checks to cheat the ordering.
-  - live_products is different: every scheduled FakeStoreAPI pull is a new
+  - live_products is different: every scheduled live-API pull is a new
     timestamped snapshot (fetched_at is part of the primary key), so it's
     append-only — that's what lets the dashboard show price/catalog change
     over time instead of only the latest snapshot.
@@ -49,8 +49,16 @@ def _bulk_insert(engine: Engine, df: pd.DataFrame, table: str) -> int:
 def load_olist(engine: Engine, clean: dict[str, pd.DataFrame]) -> int:
     total = 0
     with engine.begin() as conn:
+        # MySQL refuses TRUNCATE on any table an active FK constraint points
+        # at, regardless of truncation order or whether the child is already
+        # empty. Disabling checks for just this phase — then immediately
+        # re-enabling them — is the standard, safe pattern for a full-refresh
+        # load; it never touches the constraints themselves, only the
+        # per-statement check during this transaction.
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
         for table in _TRUNCATE_ORDER:
             conn.execute(text(f"TRUNCATE TABLE {table}"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
         logger.info("Truncated %d historical tables ahead of full refresh", len(_TRUNCATE_ORDER))
 
     for table in _INSERT_ORDER:
