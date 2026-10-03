@@ -1,8 +1,10 @@
 # E-Commerce ETL Pipeline & Analytics System
 
 A modular ETL pipeline that ingests historical e-commerce transaction data
-(CSV) and a live product catalog (REST API), loads both into a normalized
-MySQL schema, and serves the results through a public analytics dashboard.
+(CSV) and a live product catalog (REST API — DummyJSON by default, swapped
+in from FakeStoreAPI after a backend outage during development; see
+"Known issues found and fixed" below), loads both into a normalized MySQL
+schema, and serves the results through a public analytics dashboard.
 
 This directly backs the resume bullet:
 > Developed a modular ETL pipeline to extract, transform, and store
@@ -32,16 +34,27 @@ to work. Specifically, this session:
 - Ran the Streamlit dashboard as a live server and confirmed it serves
   (HTTP 200, health check passing) and separately re-ran every chart's
   underlying query + Plotly call directly to confirm no runtime errors
-- Tested the FakeStoreAPI retry/backoff logic for real — it correctly
-  retried 3 times with exponential backoff and failed cleanly. This
-  sandbox's network is allowlisted to a fixed set of domains and
-  `fakestoreapi.com` isn't on it, so this proves the *code path* works but
-  **you need to confirm the live API call itself succeeds from your own
-  machine**, where there's no such restriction.
+- **Confirmed end-to-end on your actual Windows machine, not just the
+  sandbox**: after working through a real local setup (MySQL port had been
+  changed from the default during install, a collation mismatch in the FK
+  constraints, and a password mismatch for `etl_user`), the full Olist
+  pipeline ran successfully on your machine too — same 549,947 rows loaded.
+- The live-API branch originally targeted FakeStoreAPI. Its retry/backoff
+  logic was verified for real (3 retries with exponential backoff, clean
+  failure) — first against this sandbox's restricted network, then again
+  against your machine when FakeStoreAPI itself had a genuine outage
+  (Cloudflare 522 — their backend, not a code or network problem on either
+  end). Rather than wait it out, the live-API source was switched to
+  **DummyJSON** (also free, no auth, no key). `extract.py` and
+  `transform.py` were updated to tolerate *either* API's response shape —
+  verified against DummyJSON's actual documented response format and
+  loaded into MySQL — so flipping `FAKESTORE_API_BASE` back to
+  `https://fakestoreapi.com` later needs no code change if it comes back up.
 
-**What you still need to do yourself** (can't be done from this sandbox):
-1. Run `python -m etl.main` on your own machine and confirm the FakeStoreAPI
-   branch succeeds (it should — nothing sandbox-specific in that code)
+**What's still worth doing yourself:**
+1. Run `python -m etl.main` once more to confirm the DummyJSON branch
+   succeeds end to end on your machine (the Olist branch is already
+   confirmed working — this just closes the loop on the live-API side)
 2. Create the free-tier cloud MySQL instance and point `.env` at it
 3. Deploy the Prefect schedule and the Streamlit dashboard publicly
 4. Actually read through the code — you need to be able to defend every
@@ -53,7 +66,7 @@ to work. Specifically, this session:
 
 ```
                 ┌─────────────────┐        ┌──────────────────────┐
-                │  Olist CSVs      │        │  FakeStoreAPI (REST) │
+                │  Olist CSVs      │        │  DummyJSON (REST)     │
                 │  (historical,    │        │  (live product       │
                 │   batch)         │        │   catalog)            │
                 └────────┬─────────┘        └──────────┬───────────┘
@@ -86,15 +99,15 @@ to work. Specifically, this session:
   back to their dimensions, all indexed on the columns the reporting
   queries actually filter/join on
 - **live_products** — deliberately a *separate* table from `products`.
-  Olist and FakeStoreAPI describe different real-world catalogs with
-  non-overlapping IDs; merging them would fabricate a relationship that
-  doesn't exist. `fetched_at` is part of its primary key, so every
+  Olist and the live product API describe different real-world catalogs
+  with non-overlapping IDs; merging them would fabricate a relationship
+  that doesn't exist. `fetched_at` is part of its primary key, so every
   scheduled pull is a new timestamped snapshot (append-only), which is
   what lets you track catalog/price changes over time later if you want to.
 - **pipeline_runs** — one row per (source, stage) execution: status,
   timing, row counts, and the error message on failure. This is what the
   dashboard's "pipeline health" panel reads from, and it's real — the row
-  in there right now from this session's FakeStoreAPI failure is genuine,
+  in there from this project's actual FakeStoreAPI outage is genuine,
   not staged.
 
 ### Load strategy
@@ -103,12 +116,52 @@ Olist tables use **full refresh** (truncate, then bulk insert) since it's a
 static historical export — this keeps reruns idempotent. `live_products` is
 **append-only**, since each pull is a distinct snapshot in time.
 
-One real bug found and fixed during the build: MySQL refuses `TRUNCATE` on
-any table referenced by an *active* foreign key, regardless of truncation
-order or whether the child table is already empty. Fixed with the standard
-pattern — `SET FOREIGN_KEY_CHECKS=0` for just the truncate phase, then
-re-enabled immediately after (see `etl/load.py`). Worth knowing this cold if
-asked about it.
+Three real issues found and fixed during the build — all worth knowing cold
+if asked about them in an interview:
+
+1. MySQL refuses `TRUNCATE` on any table referenced by an *active* foreign
+   key, regardless of truncation order or whether the child table is
+   already empty. Fixed with the standard pattern — `SET
+   FOREIGN_KEY_CHECKS=0` for just the truncate phase, then re-enabled
+   immediately after (see `etl/load.py`).
+
+2. A foreign key's referencing and referenced columns must match not just
+   in type but in **collation** — and MySQL's default collation can differ
+   between installs/versions (`utf8mb4_0900_ai_ci` vs
+   `utf8mb4_unicode_ci`, etc.), even when every column is declared
+   identically as `CHAR(32)`. Relying on inheriting the database's default
+   collation worked in one environment and failed in another with `ERROR
+   3780`. Fixed by pinning `COLLATE utf8mb4_unicode_ci` explicitly on every
+   column that's a primary or foreign key, so the schema behaves
+   identically regardless of server defaults (see `sql/schema.sql`).
+
+3. The live-API source (originally FakeStoreAPI) had a genuine backend
+   outage mid-project (Cloudflare 522). Rather than just wait, the pipeline
+   was pointed at DummyJSON instead — a different free demo API with a
+   *different* JSON shape (`{"products": [...]}` instead of a bare list,
+   a flat `rating` number instead of `{"rate", "count"}`, `thumbnail`
+   instead of `image`). `extract.py` and `transform.py` were written to
+   tolerate either shape, so the source can be swapped back via one `.env`
+   value with no code change. This is a real example of designing for a
+   dependency that might change out from under you — a reasonable thing to
+   bring up if an interviewer asks about handling unreliable third-party
+   APIs.
+
+### Reliability
+
+- Every stage (`extract`/`transform`/`load`) for both sources is wrapped in
+  `etl/db.py`'s `track_run()` context manager — writes a `running` row to
+  `pipeline_runs` on start, updates to `success`+row count or
+  `failed`+error message on exit, even on an unhandled exception
+- The two source branches (`olist_csv`, `fakestore_api`) are isolated in
+  `run_pipeline()` — one failing doesn't stop the other, which was actually
+  proven this session
+- The API extractor retries transient failures with exponential backoff
+  before giving up
+- Structured logs (console + rotating file) via `etl/logging_setup.py`,
+  independent of what's in the database
+
+---
 
 ## Local setup
 
@@ -123,11 +176,18 @@ pip install -r requirements.txt
 
 # 3. Configure
 cp .env.example .env
-# edit .env if your local MySQL user/password differ from the defaults
+# Edit .env: set DB_PASSWORD to match whatever you set for etl_user below.
+# Also check DB_PORT — some Windows MySQL installs pick a non-default port
+# (e.g. 3307) automatically if 3306 looks taken during setup. Confirm the
+# real port with:  netstat -ano | findstr LISTENING | findstr 33
+# and make DB_PORT in .env match it, or pass -P <port> on the commands below.
 
 # 4. Create the schema
 mysql -u root -p < sql/schema.sql
-mysql -u root -p -e "CREATE USER IF NOT EXISTS 'etl_user'@'localhost' IDENTIFIED BY 'your_password'; GRANT ALL ON ecommerce_etl.* TO 'etl_user'@'localhost';"
+mysql -u root -p -e "CREATE USER IF NOT EXISTS 'etl_user'@'localhost' IDENTIFIED BY 'your_password_here'; GRANT ALL ON ecommerce_etl.* TO 'etl_user'@'localhost'; FLUSH PRIVILEGES;"
+# ^ replace 'your_password_here' with a real password, and put that same
+#   exact value in .env's DB_PASSWORD — a mismatch here is the #1 cause of
+#   "Access denied for user 'etl_user'@'localhost'" errors.
 
 # 5. Run the pipeline
 python -m etl.main
