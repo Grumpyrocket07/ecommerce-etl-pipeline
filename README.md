@@ -56,7 +56,7 @@ to work. Specifically, this session:
    succeeds end to end on your machine (the Olist branch is already
    confirmed working — this just closes the loop on the live-API side)
 2. Create the free-tier cloud MySQL instance and point `.env` at it
-3. Deploy the Prefect schedule and the Streamlit dashboard publicly
+3. Deploy the scheduled GitHub Actions workflow and the Streamlit dashboard publicly
 4. Actually read through the code — you need to be able to defend every
    part of this in an interview, not just point at working output
 
@@ -86,7 +86,7 @@ to work. Specifically, this session:
                        ┌────────────────┴─────────────────┐
                        ▼                                    ▼
               ┌─────────────────┐                 ┌──────────────────┐
-              │  Prefect flow    │                 │  Streamlit        │
+              │  GitHub Actions  │                 │  Streamlit        │
               │  (schedules the  │                 │  dashboard         │
               │   above)         │                 │  (public, read-only)│
               └──────────────────┘                 └──────────────────┘
@@ -211,12 +211,29 @@ You said you don't have cloud experience — here's the exact, free-tier path.
 4. Run `mysql -h <host> -P <port> -u <user> -p <db> < sql/schema.sql`
    against the cloud instance, then `python -m etl.main` once to populate it
 
-### Scheduling: Prefect
-- Simplest: Prefect Cloud's free tier + a lightweight always-on worker
-  (Railway can run this too — a small worker process on a cron-like
-  schedule)
-- `prefect deploy etl/flow.py:ecommerce_etl_flow --name daily-refresh` from
-  the Prefect docs walks through connecting a deployment to a schedule
+### Scheduling: GitHub Actions
+
+Runs `scripts/run_scheduled_update.py` daily via
+`.github/workflows/scheduled-pipeline.yml` — GitHub's own runners execute
+it, no separate worker or always-on service needed.
+
+This deliberately only re-runs the **live product API branch**, not the
+full pipeline. The Olist branch is a static historical export: re-running
+it produces byte-identical output every time, and it needs the raw CSVs,
+which aren't committed to the repo (too large, and not meant to be — see
+`.gitignore`). The live branch is the only part of the system where a
+schedule actually has a point, since it's the only part that can change
+between runs.
+
+Setup:
+1. In the GitHub repo: **Settings → Secrets and variables → Actions →
+   New repository secret** — add `DB_HOST`, `DB_PORT`, `DB_NAME`,
+   `DB_USER`, `DB_PASSWORD` (same values as your cloud `.env`)
+2. Push `.github/workflows/scheduled-pipeline.yml` — GitHub picks it up
+   automatically, no extra enabling step
+3. Check the **Actions** tab on GitHub to see run history, or click
+   **"Run workflow"** there to trigger it on demand instead of waiting
+   for the schedule
 
 ### Dashboard: Streamlit Community Cloud
 1. Push this repo to GitHub (the `.gitignore` already excludes `.env` and
@@ -260,7 +277,6 @@ etl/
   transform.py          # cleaning, type-casting, FK-integrity filtering
   load.py                # truncate+bulk-insert (historical) / append (live)
   main.py                 # plain-Python orchestrator
-  flow.py                  # Prefect flow wrapping the same functions
 sql/
   schema.sql                # DDL
   reporting_queries.sql       # the 8 validated queries
@@ -268,7 +284,10 @@ dashboard/
   app.py                       # Streamlit dashboard
 scripts/
   seed_live_products_sample.py  # sandbox-only test fixture — see its docstring
-data/                            # put the 9 Olist CSVs here (gitignored)
+  run_scheduled_update.py        # entry point for the GitHub Actions schedule
+.github/workflows/
+  scheduled-pipeline.yml          # daily live-catalog update (see README above)
+data/                              # put the 9 Olist CSVs here (gitignored)
 .env.example
 requirements.txt
 ```

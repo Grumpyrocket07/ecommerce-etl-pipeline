@@ -37,7 +37,7 @@ def track_run(pipeline_name: str, source_name: str, stage: str):
             run.rows = len(df)
     On success, writes status='success' with run.rows.
     On exception, writes status='failed' with the error message, then re-raises
-    so the caller (Prefect, or a plain script) still sees the failure.
+    so the caller still sees the failure.
     """
     engine = get_engine()
 

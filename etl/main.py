@@ -2,8 +2,8 @@
 Plain-Python entry point for the pipeline (no orchestrator required).
 
 Run directly:      python -m etl.main
-Or import run_pipeline() from Prefect (see etl/flow.py) to get scheduling,
-retries at the flow level, and a UI on top of the same logic.
+Or import run_fakestore_pipeline() directly, as
+scripts/run_scheduled_update.py does for the GitHub Actions schedule.
 """
 from etl.config import CSV_DATA_DIR
 from etl.db import get_engine, track_run

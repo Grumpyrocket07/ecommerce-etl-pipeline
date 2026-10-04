@@ -4,7 +4,7 @@ Structured logging shared by every ETL stage.
 Every module gets a logger via get_logger(__name__) and logs to both the
 console and a rotating file under LOG_DIR, so a pipeline run leaves a
 permanent, inspectable trail (start/end of each stage, row counts, failures)
-independent of whatever's shown in Prefect's UI.
+independent of whatever's shown in the GitHub Actions run log.
 """
 import logging
 import logging.handlers
